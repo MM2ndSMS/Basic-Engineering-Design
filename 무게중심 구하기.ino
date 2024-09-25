@@ -4,7 +4,7 @@
 #define NPIXELS 128        // 픽셀의 개수를 128로 정의
 
 byte Pixel[NPIXELS];       // 측정된 값을 저장할 배열 (범위: 0~255)
-byte Threshold_Data[NPIXELS]; // 이진화된 값을 저장할 배열
+byte Threshold_Data[NPIXELS]; /// 이진화된 값을 저장할 배열
 
 int LineSensor_Data[NPIXELS];
 int LineSensor_Data_Adaption[NPIXELS];
