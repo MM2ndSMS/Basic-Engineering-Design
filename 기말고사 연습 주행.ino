@@ -3,22 +3,22 @@
 
 #define test_pin 45
 #define A0pin A0
-#define SIpin 23
-#define CLKpin 22
+#define SIpin 18
+#define CLKpin 17
 #define NPIXELS 128
 
-#define ENA 7
-#define IN1 11
-#define IN2 10
-#define IN3 9
-#define IN4 8
-#define ENB 6
+#define ENA 44
+#define IN1 43
+#define IN2 42
+#define IN3 41
+#define IN4 40
+#define ENB 39
 
-#define base_speed 100
+#define base_speed 70
 #define Grid_Size 0.4
 
 float target_heading_angle = 90;
-float kp_yaw = 0.21;
+float kp_yaw = 3.1;
 float kd_yaw = 0.4;
 float error_yaw = 0.0;
 float error_yaw_old = 0.0;
@@ -43,8 +43,8 @@ long prev_encoder_B = 0;
 
 const int IMG_WIDTH_HALF = 64;
 const int BASE_SPEED = 70;
-const float KP = 4.0;
-const float KD = 0.2;
+const float KP = 1.6;
+const float KD = 0.4;
 float error_old = 0.0;
 
 #define FASTADC 1
@@ -201,8 +201,8 @@ void update_robot_distance()
   float avg_pulse = (delta_A + delta_B) / 2.0;
   robot_distance += (avg_pulse / pulses_per_rev) * wheel_circumference;
 
-  Serial.print("Distance: ");
-  Serial.println(robot_distance);
+  //Serial.print("Distance: ");
+  //Serial.println(robot_distance);
 
   prev_encoder_A = encoder_A_pulse;
   prev_encoder_B = encoder_B_pulse;
@@ -319,7 +319,7 @@ void loop()
 
     case 2: 
       yaw_control(); 
-      if (error_yaw < 3 && error_yaw > -3) 
+      if (error_yaw < 5 && error_yaw > -5) 
       {  
         function_flag = 3; 
         delay(500);
@@ -342,7 +342,7 @@ void loop()
 
     case 4: 
       yaw_control(); 
-      if (error_yaw < 3 && error_yaw > -3) 
+      if (error_yaw < 5 && error_yaw > -5) 
       {  
         function_flag = 3; 
         delay(500);
@@ -365,7 +365,7 @@ void loop()
 
     case 6: 
       yaw_control();
-      if (error_yaw < 3 && error_yaw > -3) 
+      if (error_yaw < 5 && error_yaw > -5) 
       {  
         function_flag = 3; 
         delay(500);
