@@ -1,24 +1,25 @@
 #include <MsTimer2.h>
 #include <LSM303.h>
 
-#define test_pin 45
-#define A0pin A0
-#define SIpin 18
-#define CLKpin 17
-#define NPIXELS 128
-
-#define ENA 44
-#define IN1 43
-#define IN2 42
-#define IN3 41
-#define IN4 40
-#define ENB 39
-
-#define base_speed 70
 #define Grid_Size 0.4
 
+#define wpSIZE 20
+
+#define A0pin A0
+#define SIpin 31
+#define CLKpin 30
+#define NPIXELS 128
+
+#define ENA 7
+#define IN1 8
+#define IN2 9
+#define IN3 11
+#define IN4 12
+#define ENB 13
+#define BASE_SPEED 70
+
 float target_heading_angle = 90;
-float kp_yaw = 3.1;
+float kp_yaw = 0.21;
 float kd_yaw = 0.4;
 float error_yaw = 0.0;
 float error_yaw_old = 0.0;
@@ -30,57 +31,84 @@ LSM303 compass;
 byte Pixel[NPIXELS];
 byte Threshold_Data[NPIXELS];
 
+int mission_flag = 0;
+int function_flag = 3;
+
 int LineSensor_Data[NPIXELS];
 int LineSensor_Data_Adaption[NPIXELS];
 int MAX_LineSensor_Data[NPIXELS];
 int MIN_LineSensor_Data[NPIXELS];
 int flag_line_adapation;
 
-long encoder_A_pulse = 0;
-long encoder_B_pulse = 0;
-long prev_encoder_A = 0;
-long prev_encoder_B = 0;
-
 const int IMG_WIDTH_HALF = 64;
-const int BASE_SPEED = 70;
-const float KP = 1.6;
-const float KD = 0.4;
+const float KP = 3.0;
+const float KD = 0.2;
 float error_old = 0.0;
+int base_speed =100;
 
 #define FASTADC 1
 #define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
 #define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
 
-float robot_distance = 0.0;
-float wheel_circumference = 20.0;
-int pulses_per_rev = 360;
+const byte outPin = 13; // Output pin: digital pin 13(D13)
+//const byte interruptPin1 = 2; // Interrupt pin: D2
+//const byte interruptPin2 = 3; // Interrupt pin: D2
+const byte encoder1_A = 20; // Interrupt pin: D2
+const byte encoder1_B = 21; // Interrupt pin: D2
+const byte encoder2_A = 18; // Interrupt pin: D2
+const byte encoder2_B = 19; // Interrupt pin: D2
+const byte resetPin = 5;
+volatile byte state = 0;
+volatile long encoderpos;
 
-int mission_flag = 0;
-int function_flag = 0;
+//unsigned long cnt1 = 0; // 추가
+//unsigned long cnt2 = 0; // 추가
+long cnt1 = 0; // 추가
+long cnt2 = 0; // 추가
 
-struct Waypoint 
-{
+struct waypoint{
   double distance;
   double heading_angle;
 };
 
-Waypoint waypoints[20];
-int waypoint_no = 0;
+waypoint wayway[wpSIZE];
+int waypoint_way = 0;
 
-void setup() 
+void setup()
 {
   reset_encoder();
   MsTimer2::set(20, MsTimer2_ISR);
   MsTimer2::start();
 
-  for (int i = 0; i < NPIXELS; i++) 
+  pinMode(outPin, OUTPUT); // Output mode
+  //  pinMode(interruptPin1, INPUT_PULLUP); // Input mode, pull-up
+  //  pinMode(interruptPin2, INPUT_PULLUP); // Input mode, pull-up
+  pinMode(encoder1_A, INPUT_PULLUP);
+  pinMode(encoder1_B, INPUT_PULLUP);
+  pinMode(encoder2_A, INPUT_PULLUP);
+  pinMode(encoder2_B, INPUT_PULLUP);
+  pinMode(resetPin, INPUT);
+
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENA, OUTPUT);
+  pinMode(ENB, OUTPUT);
+
+  //  attachInterrupt(digitalPinToInterrupt(interruptPin1), intfunc1, RISING); // Enable interrupt
+  //  attachInterrupt(digitalPinToInterrupt(interruptPin2), intfunc2, RISING); // Enable interrupt
+  attachInterrupt(digitalPinToInterrupt(encoder1_A), intfunc1, RISING); // Enable interrupt
+  attachInterrupt(digitalPinToInterrupt(encoder2_A), intfunc2, RISING); // Enable interrupt
+
+  int i;
+  for (i = 0; i < NPIXELS; i++)
   {
     LineSensor_Data[i] = 0;
     LineSensor_Data_Adaption[i] = 0;
     MAX_LineSensor_Data[i] = 1023;
     MIN_LineSensor_Data[i] = 0;
   }
-
   pinMode(SIpin, OUTPUT);
   pinMode(CLKpin, OUTPUT);
   pinMode(A0pin, INPUT);
@@ -89,6 +117,7 @@ void setup()
   digitalWrite(CLKpin, LOW);
 
 #if FASTADC
+
   sbi(ADCSRA, ADPS2);
   cbi(ADCSRA, ADPS1);
   cbi(ADCSRA, ADPS0);
@@ -96,32 +125,26 @@ void setup()
 
   flag_line_adapation = 0;
 
-  pinMode(test_pin, OUTPUT);
+  wayway[0] = {2 * Grid_Size, 90};
+  wayway[1] = {1 * Grid_Size, 0};
+  wayway[2] = {3 * Grid_Size, 90};
+  wayway[3] = {0, 0};
+  wayway[4] = {0, -90};
+  wayway[5] = {1 * Grid_Size, -90};
+  wayway[6] = {0, -90};
 
   Serial.begin(115200);
+}
 
-  waypoints[0] = {0, 0};            
-  waypoints[1] = {2 * Grid_Size, 0};
-  waypoints[2] = {0, 90};           
-  waypoints[3] = {3 * Grid_Size, 90};
-  waypoints[4] = {0, 0};             
-  waypoints[5] = {0, -90};         
-  waypoints[6] = {1 * Grid_Size, -90}; 
-  waypoints[7] = {0, -90};
+void reset_encoder()
+{
+  encoderpos = cnt1 = cnt2 = 0;
 
 }
 
-void reset_encoder() 
+void MsTimer2_ISR()
 {
-  encoder_A_pulse = 0;
-  encoder_B_pulse = 0;
-  prev_encoder_A = 0;
-  prev_encoder_B = 0;
-}
-
-void MsTimer2_ISR() 
-{
-  switch (function_flag) 
+  switch (function_flag)
   {
     case 1:
       line_tracer();
@@ -136,47 +159,102 @@ void MsTimer2_ISR()
   }
 }
 
-void motor_l(int speed) 
+
+void intfunc1()
 {
-  if (speed >= 0) 
-  {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, HIGH);
-    analogWrite(ENA, speed);
-  } 
-  else 
+
+  cnt1++;
+
+}
+
+void intfunc2()
+{
+
+  cnt2++;
+
+}
+
+void motor_l(int speed)
+{
+  if (speed >= 0)
   {
     digitalWrite(IN1, HIGH);
     digitalWrite(IN2, LOW);
+    analogWrite(ENA, speed); // 0-255
+  }
+  else
+  {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
     analogWrite(ENA, -speed);
   }
 }
 
-void motor_r(int speed) 
+void motor_r(int speed)
 {
-  if (speed >= 0) 
-  {
-    digitalWrite(IN3, LOW);
-    digitalWrite(IN4, HIGH);
-    analogWrite(ENB, speed);
-  } 
-  else 
+  if (speed >= 0)
   {
     digitalWrite(IN3, HIGH);
     digitalWrite(IN4, LOW);
+    analogWrite(ENB, speed); // 0-255
+  }
+  else
+  {
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
     analogWrite(ENB, -speed);
   }
 }
 
-void motor_control(int left_motor_speed, int right_motor_speed) 
+void motor_control(int left_motor_speed, int right_motor_speed)
 {
   motor_l(left_motor_speed);
   motor_r(right_motor_speed);
 }
 
+////////////////////////////////////////////////////
+
+void threshold_line_image(int threshold_value)
+{
+  for (int i = 0; i < NPIXELS; i++)
+  {
+    if (Pixel[i] >= threshold_value)
+    {
+      Threshold_Data[i] = 255;
+    }
+    else
+    {
+      Threshold_Data[i] = 0;
+    }
+  }
+}
+
+void line_control(int line_center)
+{
+  int error = line_center - IMG_WIDTH_HALF;
+  int derivative = error - error_old;
+  float output = KP * error + KD * derivative;
+  int speed_difference = int(output);
+
+  int right_speed = BASE_SPEED - speed_difference;
+  int left_speed  = BASE_SPEED + speed_difference;
+
+  left_speed = constrain(left_speed, 0, 100);
+  right_speed = constrain(right_speed, 0, 100);
+  Serial.println(left_speed);
+  Serial.println(right_speed);
+
+
+  motor_control(left_speed, right_speed);
+
+  error_old = error;
+}
+
 void read_line_camera(void)
 {
   int i;
+  delay(1);
+
   digitalWrite(CLKpin, LOW);
   digitalWrite(SIpin, HIGH);
   digitalWrite(CLKpin, HIGH);
@@ -193,21 +271,26 @@ void read_line_camera(void)
   digitalWrite(CLKpin, LOW);
 }
 
-void update_robot_distance() 
+double line_COM(void)
 {
-  long delta_A = encoder_A_pulse - prev_encoder_A;
-  long delta_B = encoder_B_pulse - prev_encoder_B;
+  double COM = 0.0;
+  double mass_sum = 0.0;
 
-  float avg_pulse = (delta_A + delta_B) / 2.0;
-  robot_distance += (avg_pulse / pulses_per_rev) * wheel_circumference;
+  for (int i = 0; i < NPIXELS; i++)
+  {
+    mass_sum += Threshold_Data[i];
+    COM += Threshold_Data[i] * i;
+  }
 
-  //Serial.print("Distance: ");
-  //Serial.println(robot_distance);
+  if (mass_sum == 0)
+  {
+    return -1;
+  }
 
-  prev_encoder_A = encoder_A_pulse;
-  prev_encoder_B = encoder_B_pulse;
+  COM = COM / mass_sum;
+
+  return COM;
 }
-
 
 void yaw_control() 
 {
@@ -232,58 +315,6 @@ void yaw_control()
   motor_control(l_motor_speed, r_motor_speed);
 }
 
-void threshold_line_image(int threshold_value)
-{
-  digitalWrite(test_pin, HIGH);
-  for (int i = 0; i < NPIXELS; i++)
-  {
-    if (Pixel[i] >= threshold_value)
-    {
-      Threshold_Data[i] = 255;
-    } else {
-      Threshold_Data[i] = 0;
-    }
-  }
-  digitalWrite(test_pin, LOW);
-}
-
-double line_COM(void)
-{
-  double COM = 0.0;
-  double mass_sum = 0.0;
-
-  for (int i = 0; i < NPIXELS; i++)
-  {
-    mass_sum += Threshold_Data[i];
-    COM += Threshold_Data[i] * i;
-  }
-
-  if (mass_sum == 0)
-  {
-    return -1;
-  }
-
-  COM = COM / mass_sum;
-  return COM;
-}
-
-void line_control(int line_center)
-{
-  int error = line_center - IMG_WIDTH_HALF;
-  int derivative = error - error_old;
-  float output = KP * error + KD * derivative;
-  int speed_difference = int(output);
-
-  int right_speed = BASE_SPEED - speed_difference;
-  int left_speed  = BASE_SPEED + speed_difference;
-
-  left_speed = constrain(left_speed, 0, 100);
-  right_speed = constrain(right_speed, 0, 100);
-
-  motor_control(left_speed, right_speed);
-  error_old = error;
-}
-
 void line_tracer() 
 {
   double cx = 64;
@@ -295,86 +326,58 @@ void line_tracer()
 
 void loop()
 {
-  switch (mission_flag)
+  int line_center = 64;
+
+  line_center  = line_COM();
+
+  encoderpos = 10 * ((cnt1 + cnt2) / 2 * 0.028);
+
+switch (mission_flag)
   {
-    case 0: 
-      motor_control(0, 0);
+    case 0: // 초기화
+      function_flag = 3;
       delay(500);
-      robot_distance = 0.0;  
-      function_flag = 1;  
-      mission_flag = 1;   
+      reset_encoder();
+      function_flag = 1; // 라인 트레이싱 시작
+      mission_flag = 1;
       break;
 
-    case 1: 
-      if (robot_distance >= waypoints[waypoint_no].distance) 
-      {  
-        function_flag = 3; 
-        delay(500);       
-        target_yaw = waypoints[waypoint_no].heading_angle - compass.heading(); 
-        function_flag = 2; 
-        mission_flag = 2;  
-        waypoint_no++;     
+    case 1: // 거리 이동 (라인 트레이싱)
+      if (encoderpos >= wayway[waypoint_way].distance)
+      {
+        function_flag = 3; // 정지
+        delay(500);
+        target_yaw = wayway[waypoint_way].heading_angle; // 목표 각도 설정
+        function_flag = 2; // 각도 조정 시작
+        mission_flag = 2;
       }
       break;
 
-    case 2: 
-      yaw_control(); 
-      if (error_yaw < 5 && error_yaw > -5) 
-      {  
-        function_flag = 3; 
+    case 2: // 각도 조정
+      if (abs(error_yaw) < 5) 
+      {
+        function_flag = 3; // 정지
         delay(500);
         reset_encoder();
-        mission_flag = 3;  
+        mission_flag = 3;
       }
       break;
 
-    case 3:
-      if (robot_distance >= waypoints[waypoint_no].distance) 
-      {  
-        function_flag = 3; 
-        delay(500);      
-        target_yaw = waypoints[waypoint_no].heading_angle - compass.heading(); 
-        function_flag = 2; 
-        mission_flag = 4;  
-        waypoint_no++;     
+    case 3: // 다음 Waypoint로 전환
+      waypoint_way++; // 다음 Waypoint로 이동
+      if (waypoint_way <= wpSIZE)
+      {
+        mission_flag = 0; // 초기화 단계로 돌아가기
+      }
+      else
+      {
+        mission_flag = 4; // 모든 Waypoint 완료
       }
       break;
 
-    case 4: 
-      yaw_control(); 
-      if (error_yaw < 5 && error_yaw > -5) 
-      {  
-        function_flag = 3; 
-        delay(500);
-        reset_encoder();
-        mission_flag = 5;
-      }
-      break;
-
-    case 5:
-      if (robot_distance >= waypoints[waypoint_no].distance) 
-      {  
-        function_flag = 3;
-        delay(500);        
-        target_yaw = waypoints[waypoint_no].heading_angle - compass.heading();
-        function_flag = 2;
-        mission_flag = 6; 
-        waypoint_no++;    
-      }
-      break;
-
-    case 6: 
-      yaw_control();
-      if (error_yaw < 5 && error_yaw > -5) 
-      {  
-        function_flag = 3; 
-        delay(500);
-        mission_flag = 7;
-      }
-      break;
-
-    case 7:
-      motor_control(0, 0);  
+    case 4: // 종료 상태
+      motor_control(0, 0); // 정지
       break;
   }
+  delay(50);
 }
