@@ -3,7 +3,7 @@
 
 #define Grid_Size 0.4
 
-#define wpSIZE 20
+#define wpSIZE 4
 
 #define A0pin A0
 #define SIpin 31
@@ -127,12 +127,9 @@ void setup()
 
   wayway[0] = {2 * Grid_Size, 90};
   wayway[1] = {1 * Grid_Size, 0};
-  wayway[2] = {3 * Grid_Size, 90};
-  wayway[3] = {0, 0};
-  wayway[4] = {0, -90};
+  wayway[2] = {2 * Grid_Size, -90};
   wayway[5] = {1 * Grid_Size, -90};
-  wayway[6] = {0, -90};
-
+  
   Serial.begin(115200);
 }
 
